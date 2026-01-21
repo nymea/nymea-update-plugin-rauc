@@ -1,0 +1,8 @@
+*.o
+*.pro.user
+*.deb
+debs*
+source_repository
+.qtcreator/
+.crossbuilder
+build/

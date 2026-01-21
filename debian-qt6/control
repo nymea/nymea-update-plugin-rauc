@@ -1,0 +1,27 @@
+Source: nymea-update-plugin-rauc
+Section: utils
+Priority: optional
+Maintainer: chargebyte austria GmbH <contact@nymea.io>
+Standards-Version: 4.7.2
+Homepage: https://nymea.io
+Build-Depends: debhelper,
+               dpkg-dev,
+               libnymea-dev,
+               qt6-base-dev,
+               qt6-base-dev-tools,
+
+
+Package: nymea-update-plugin-rauc
+Architecture: any
+Section: metapackages
+Multi-Arch: same
+Depends: ${misc:Depends},
+Provides: nymea-update-plugin-impl
+Description: Rauc platform update plugin for nymea
+ The nymea daemon is a plugin based IoT (Internet of Things) server. The
+ server works like a translator for devices, things and services and
+ allows them to interact.
+ With the powerful rule engine you are able to connect any device available 
+ in the system and create individual scenes and behaviors for your environment.
+ .
+ This package will install the platform adaption for rauc based platforms.

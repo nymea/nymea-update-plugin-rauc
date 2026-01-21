@@ -1,0 +1,173 @@
+#!/bin/bash -e
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+VERSION_STRING=''
+DESTINATION_DIR=''
+IMAGE_FILE=''
+
+CHANGELOG=''
+CHANGELOG_STRING=''
+CHANGELOG_FILE=''
+
+#------------------------------------------------------------------------------------------
+function usage() {
+    cat <<EOF
+
+This tool was designed to maintain a self hosted rauc image repository. The image file will be copied
+to the output directory and a \"release.json\" will be generated with the given information. The output
+directory is can be hosted using any webserver for public or basic authenticated access.
+
+Required packages:
+- sha256
+- md5sum
+- squashfs-tools
+- jq
+
+Usage: $(basename $0) [OPTIONS]
+
+OPTIONS:
+  -o, --output [directory]       Path to the destination dir of the image and release.json file.
+  -i, --image [file]             The image file you want to release.
+  -c, --changelog [string]       The changelog as escaped string.
+  -k, --changelog-file [file]    The changelog provided using a file. The content will be serialized for the release.json.
+  -h, --help                     Show this message
+EOF
+}
+
+#------------------------------------------------------------------------------------------
+
+# Read a value from a ini data
+ini_get_from_content() {
+    local content=$1 section=$2 key=$3
+    awk -F= -v section="[$section]" -v key="$key" '
+    $0==section {insec=1; next}
+    /^\[/      {insec=0}
+    insec {
+        k=$1; sub(/^[ \t]+/, "", k); sub(/[ \t]+$/, "", k)
+        if (k==key) {
+            v=$2
+            for (i=3; i<=NF; i++) v=v "=" $i
+            sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
+            print v
+            exit
+        }
+    }
+  ' <<< "$content"
+}
+
+
+#------------------------------------------------------------------------------------------
+
+while [ "$1" != "" ]; do
+    case $1 in
+        -o | --output )
+            DESTINATION_DIR=$2
+            shift;;
+        -i | --image )
+            IMAGE_FILE=$2
+            shift;;
+        -c | --changelog )
+            CHANGELOG_STRING=$2
+            shift;;
+        -k | --changelog-file )
+            CHANGELOG_FILE=$2
+            shift;;
+        -h | --help )
+            usage && exit 0;;
+        * )
+            usage && exit 1;;
+    esac
+    shift
+done
+
+if [ -z $DESTINATION_DIR ]; then
+    echo "Please specify the destination directory for the repository using \"-o\" or \"--output\" option."
+    usage
+    exit 1
+fi
+
+if [ -z $IMAGE_FILE ]; then
+    echo "Please provide an image file using the \"-i\" or \"--image\" option."
+    exit 1
+fi
+
+if [ ! -z $CHANGELOG_STRING ] && [ ! -z $CHANGELOG_FILE ]; then
+    echo "Please provide either a changelogs string or a changelog file, not both."
+    exit 1
+fi
+
+if [ ! -f $IMAGE_FILE ]; then
+    echo "Unable to find image file $IMAGE_FILE.";
+    exit 1
+fi
+
+if ! type sqfscat >/dev/null 2>&1; then
+    echo "Could not find command \"sqfscat\". Please install the squashfs-tools package."
+    exit 1
+fi
+
+# All verifications done
+IMAGE_FILE_NAME=$(basename $IMAGE_FILE)
+IMAGE_DESTINATION_FILE=$DESTINATION_DIR/$IMAGE_FILE_NAME
+if [ ! -d $DESTINATION_DIR ]; then
+    echo "Creating destination directory $DESTINATION_DIR"
+    mkdir -p $DESTINATION_DIR
+fi
+
+echo "--> Copying image file into the repository folder..."
+cp -v $IMAGE_FILE $IMAGE_DESTINATION_FILE
+
+TIMESTAMP=$(date +%s)
+CHECKSUM=($(md5sum $IMAGE_DESTINATION_FILE))
+
+# Get the rauc manifest from the image file and parse the properties we need
+IMAGE_MANIFEST="$(sqfscat $IMAGE_FILE manifest.raucm)"
+IMAGE_COMPATIBLE="$(ini_get_from_content "$IMAGE_MANIFEST" "update" "compatible")"
+IMAGE_BUILD_TIMESTAMP=$(ini_get_from_content "$IMAGE_MANIFEST" "update" "build")
+IMAGE_VERSION=$(ini_get_from_content "$IMAGE_MANIFEST" "update" "version")
+ROOTFS_SHA265="$(ini_get_from_content "$IMAGE_MANIFEST" "image.rootfs" "sha256")"
+
+echo "Output directory: $DESTINATION_DIR"
+echo "Image file: $IMAGE_FILE_NAME"
+echo "Image md5sum: $CHECKSUM"
+echo "Image rootfs SHA256: $ROOTFS_SHA265"
+echo "Image version: $IMAGE_VERSION"
+
+if [ ! -z "$CHANGELOG_STRING" ]; then
+    CHANGELOG_FILE=/tmp/changelog-tmp
+    echo -e "$CHANGELOG_STRING" > $CHANGELOG_FILE
+fi
+
+if [ ! -z $CHANGELOG_FILE ]; then
+    if ! type jq >/dev/null 2>&1; then
+        echo "Could not find command \"jq\". Please install the jq package."
+        exit 1
+    fi
+
+    # Encode changelog file for json
+    CHANGELOG=$(jq -Rs . < "$CHANGELOG_FILE")
+fi
+
+echo "Changelog:"
+echo "------------------------------------------------------"
+echo -e "$CHANGELOG"
+echo "------------------------------------------------------"
+
+RELEASE_FILE=$DESTINATION_DIR/release.json
+echo "Writing release file $RELEASE_FILE"
+
+cat <<EOM > $RELEASE_FILE
+{
+    "image": "$IMAGE_FILE_NAME",
+    "compatible": "$IMAGE_COMPATIBLE",
+    "release_timestamp": $TIMESTAMP,
+    "bundle_md5sum": "$CHECKSUM",
+    "rootfs_sha256": "$ROOTFS_SHA265",
+    "version": "$IMAGE_VERSION",
+    "changelog": $CHANGELOG
+}
+EOM
+
+cat "$RELEASE_FILE"
+echo "Released $IMAGE_FILE_NAME successfully."
