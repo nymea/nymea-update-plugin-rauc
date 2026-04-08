@@ -99,8 +99,12 @@ bool UpdateControllerRauc::checkForUpdates()
     QUrl releaseUrl = repository.url();
     releaseUrl.setPath(releaseUrl.path() + "/release.json");
 
+    qCDebug(dcPlatformUpdate()) << "Fetching information from" << releaseUrl.toString();
+
     QNetworkRequest request(releaseUrl);
     if (repository.authentication() == SelfHostedRepository::AuthenticationBasic) {
+        qCDebug(dcPlatformUpdate()) << "Using basic authentication:" << repository.userName()
+                                    << QString(repository.password()).left(3) + QString(repository.password().size() - 3, '*');
         QString concatenated = QString("%1:%2").arg(repository.userName(), repository.password());
         QString headerData = "Basic " + concatenated.toLocal8Bit().toBase64();
         request.setRawHeader("Authorization", headerData.toLocal8Bit());
@@ -343,10 +347,21 @@ bool UpdateControllerRauc::enableRepository(const QString &repositoryId, bool en
 
 void UpdateControllerRauc::init()
 {
-    // Load repositories and system info
-    QString configurationFileName = "/var/lib/nymea/rauc-update.json";
+    // Load repositories and system info json file
+    // First try to load an existing user configuration, if there is no user config, try to load the platform config, otherwise the update plugin is not available.
+    QString configurationFileName = NymeaSettings::settingsPath() + "/rauc-update.json";
     if (!QFileInfo::exists(configurationFileName)) {
-        configurationFileName = "/etc/nymea/rauc-update.json";
+        configurationFileName = NymeaSettings::defaultSettingsPath() + "/rauc-update.json";
+    }
+
+    if (!QFileInfo::exists(configurationFileName)) {
+        qCWarning(dcPlatformUpdate()) << "Platform update not available. Could not find any rauc-update.json configuration in" << NymeaSettings::settingsPath() << "and"
+                                      << NymeaSettings::defaultSettingsPath();
+        setRaucAvailable(false);
+        setUpdateRunningState(false);
+        setBusyState(false);
+        setUpdateProgress(-1);
+        return;
     }
 
     QString systemName;
