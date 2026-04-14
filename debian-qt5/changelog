@@ -1,3 +1,11 @@
+nymea-update-plugin-rauc (1.15.0) noble; urgency=medium
+
+  [ Simon Stürz ]
+  * Add --no-image-install parameter and use sqfscat only if available
+  * Update configuration handling and improve debug information
+
+ -- jenkins <developer@nymea.io>  Tue, 14 Apr 2026 14:25:02 +0200
+
 nymea-update-plugin-rauc (1.14.2) noble; urgency=medium
 
   [ Simon Stürz ]
